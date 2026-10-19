@@ -163,8 +163,12 @@ public class Main {
         System.out.println("  " + REPO_ARG + " <путь|URL>     путь к файлу репозитория или URL (обязательно)");
         System.out.println("  " + MODE_ARG + " <local|remote> режим работы (по умолчанию: local)");
         System.out.println("  " + VERSION_ARG + " <версия>    версия пакета (по умолчанию: latest)");
-        System.out.println("  " + OUTPUT_ARG + " <файл>       имя файла графа .png/.svg/.dot (по умолчанию: graph.png)");
-        System.out.println("  " + DEPTH_ARG + " <число>       максимальная глубина анализа 1..100 (по умолчанию: 3)");
+
+        System.out.println("  " + OUTPUT_ARG + " <файл>       имя файла графа .png/.svg/.dot " +
+                "(по умолчанию: graph.png)");
+
+        System.out.println("  " + DEPTH_ARG + " <число>       максимальная глубина анализа 1..100 " +
+                "(по умолчанию: 3)");
     }
 
     private record AppConfig(
