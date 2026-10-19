@@ -1,0 +1,15 @@
+P:curl
+V:7.80.0
+D:libc-utils, libcurl
+
+P:curl
+V:7.81.0
+D:libc-utils, libcurl, zlib
+
+P:wget
+V:1.21.0
+D:libc-utils, libssl, libcrypto
+
+P:bash
+V:5.1.0
+D:libc-utils, readline

@@ -1,5 +1,11 @@
 package ru.miem.depgraph;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URI;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
@@ -30,19 +36,96 @@ public class Main {
 
     private static final int MIN_DEPTH = 1;
     private static final int MAX_DEPTH = 100;
+    private static final int PREFIX_LENGTH = 2;
 
     private static final String[] ALLOWED_EXTENSIONS = {".png", ".svg", ".dot"};
+
+    private static final String BLOCK_DELIMITER = "\n\n";
+    private static final String LINE_DELIMITER = "\n";
+    private static final String PACKAGE_PREFIX = "P:";
+    private static final String VERSION_PREFIX = "V:";
+    private static final String DEPENDENCY_PREFIX = "D:";
 
     public static void main(String[] args) {
         try {
             AppConfig config = parseArgs(args);
             printConfig(config);
+            processDependencies(config);
         } catch (IllegalArgumentException e) {
             System.err.println("Ошибка: " + e.getMessage());
             System.err.println();
             printUsage();
             System.exit(1);
         }
+    }
+
+    private static void processDependencies(AppConfig config) {
+        String repositoryData = readRepository(config.repo(), config.mode());
+        String dependencies = extractDependencies(repositoryData, config.packageName(), config.version());
+
+        System.out.println("=== Прямые зависимости для " + config.packageName() + " ===");
+        System.out.println("Версия: " + config.version());
+        System.out.println("Зависимости: " + dependencies);
+        System.out.println("=======================================");
+    }
+
+    private static String readRepository(String repoPath, String mode) {
+        if (MODE_LOCAL.equals(mode)) {
+            try {
+                return Files.readString(Path.of(repoPath), StandardCharsets.UTF_8);
+            } catch (IOException e) {
+                throw new IllegalArgumentException("Ошибка чтения локального файла: " + e.getMessage());
+            }
+        } else {
+            return fetchRemoteData(repoPath);
+        }
+    }
+
+    private static String fetchRemoteData(String urlString) {
+        try {
+            URL url = URI.create(urlString).toURL();
+            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+            connection.setRequestMethod("GET");
+            try (InputStream is = connection.getInputStream()) {
+                return new String(is.readAllBytes(), StandardCharsets.UTF_8);
+            }
+        } catch (IOException e) {
+            throw new IllegalArgumentException("Ошибка загрузки данных по URL: " + e.getMessage());
+        }
+    }
+
+    private static String extractDependencies(String data, String pkg, String version) {
+        String[] blocks = data.split(BLOCK_DELIMITER);
+        for (String block : blocks) {
+            if (isTargetPackage(block, pkg, version)) {
+                return findDependencyLine(block);
+            }
+        }
+        throw new IllegalArgumentException("Пакет " + pkg + " версии " + version + " не найден");
+    }
+
+    private static boolean isTargetPackage(String block, String pkg, String version) {
+        boolean pkgMatch = false;
+        boolean verMatch = false;
+        for (String line : block.split(LINE_DELIMITER)) {
+            String trimmed = line.trim();
+            if (trimmed.equals(PACKAGE_PREFIX + pkg)) {
+                pkgMatch = true;
+            }
+            if (trimmed.equals(VERSION_PREFIX + version)) {
+                verMatch = true;
+            }
+        }
+        return pkgMatch && verMatch;
+    }
+
+    private static String findDependencyLine(String block) {
+        for (String line : block.split(LINE_DELIMITER)) {
+            if (line.startsWith(DEPENDENCY_PREFIX)) {
+                return line.substring(PREFIX_LENGTH).trim();
+            }
+        }
+        return "Нет зависимостей";
     }
 
     private static AppConfig parseArgs(String[] args) {
@@ -163,10 +246,8 @@ public class Main {
         System.out.println("  " + REPO_ARG + " <путь|URL>     путь к файлу репозитория или URL (обязательно)");
         System.out.println("  " + MODE_ARG + " <local|remote> режим работы (по умолчанию: local)");
         System.out.println("  " + VERSION_ARG + " <версия>    версия пакета (по умолчанию: latest)");
-
         System.out.println("  " + OUTPUT_ARG + " <файл>       имя файла графа .png/.svg/.dot " +
                 "(по умолчанию: graph.png)");
-
         System.out.println("  " + DEPTH_ARG + " <число>       максимальная глубина анализа 1..100 " +
                 "(по умолчанию: 3)");
     }

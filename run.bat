@@ -40,20 +40,16 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo Пример успешного запуска:
-java -cp out ru.miem.depgraph.Main --package requests --repo "%CD%\README.md" --mode local --version 2.31.0 --output deps.png --depth 5
+echo Пример 1: Успешный поиск зависимостей для curl 7.81.0
+java -cp out ru.miem.depgraph.Main --package curl --repo "%CD%\repo.txt" --mode local --version 7.81.0
 echo.
 
-echo Пример с ошибкой (несуществующий репозиторий):
-java -cp out ru.miem.depgraph.Main --package requests --repo "./missing.json" --mode local
+echo Пример 2: Поиск зависимостей для bash 5.1.0
+java -cp out ru.miem.depgraph.Main --package bash --repo "%CD%\repo.txt" --mode local --version 5.1.0
 echo.
 
-echo Пример с ошибкой (неверная глубина):
-java -cp out ru.miem.depgraph.Main --package requests --repo "%CD%\README.md" --mode local --depth abc
-echo.
-
-echo Пример с ошибкой (неизвестный режим):
-java -cp out ru.miem.depgraph.Main --package requests --repo "%CD%\README.md" --mode unknown
+echo Пример 3: Ошибка (пакет не найден)
+java -cp out ru.miem.depgraph.Main --package unknown-pkg --repo "%CD%\repo.txt" --mode local
 echo.
 
 pause
