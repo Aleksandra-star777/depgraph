@@ -8,7 +8,10 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -27,7 +30,8 @@ public class Main {
 
     private static final String MODE_LOCAL = "local";
     private static final String MODE_REMOTE = "remote";
-    private static final Set<String> ALLOWED_MODES = Set.of(MODE_LOCAL, MODE_REMOTE);
+    private static final String MODE_TEST = "test";
+    private static final Set<String> ALLOWED_MODES = Set.of(MODE_LOCAL, MODE_REMOTE, MODE_TEST);
 
     private static final String DEFAULT_MODE = MODE_LOCAL;
     private static final String DEFAULT_VERSION = "latest";
@@ -39,12 +43,6 @@ public class Main {
     private static final int PREFIX_LENGTH = 2;
 
     private static final String[] ALLOWED_EXTENSIONS = {".png", ".svg", ".dot"};
-
-    private static final String BLOCK_DELIMITER = "\n\n";
-    private static final String LINE_DELIMITER = "\n";
-    private static final String PACKAGE_PREFIX = "P:";
-    private static final String VERSION_PREFIX = "V:";
-    private static final String DEPENDENCY_PREFIX = "D:";
 
     public static void main(String[] args) {
         try {
@@ -60,22 +58,109 @@ public class Main {
     }
 
     private static void processDependencies(AppConfig config) {
-        String repositoryData = readRepository(config.repo(), config.mode());
-        String dependencies = extractDependencies(repositoryData, config.packageName(), config.version());
+        Map<String, List<String>> graph;
+        if (MODE_TEST.equals(config.mode())) {
+            String data = readFile(config.repo());
+            graph = parseTestRepo(data);
+        } else {
+            String data = readRepository(config.repo(), config.mode());
+            graph = parseApkIndex(data);
+        }
 
-        System.out.println("=== Прямые зависимости для " + config.packageName() + " ===");
-        System.out.println("Версия: " + config.version());
-        System.out.println("Зависимости: " + dependencies);
+        String startNode = config.packageName();
+        if (!graph.containsKey(startNode)) {
+            throw new IllegalArgumentException("Пакет " + startNode + " не найден в репозитории");
+        }
+
+        System.out.println("=== Граф зависимостей для " + startNode + " ===");
+        dfs(startNode, 0, config.depth(), graph, new ArrayList<>());
         System.out.println("=======================================");
+    }
+
+    private static void dfs(String node, int depth, int maxDepth,
+                            Map<String, List<String>> graph, List<String> path) {
+        if (depth > maxDepth) {
+            return;
+        }
+        if (path.contains(node)) {
+            String indent = "  ".repeat(depth);
+            String cyclePath = String.join(" -> ", path) + " -> " + node;
+            System.out.println(indent + "[Цикл] " + node + " (путь: " + cyclePath + ")");
+            return;
+        }
+
+        String indent = "  ".repeat(depth);
+        System.out.println(indent + node);
+
+        path.add(node);
+        List<String> deps = graph.getOrDefault(node, Collections.emptyList());
+        for (String dep : deps) {
+            dfs(dep, depth + 1, maxDepth, graph, path);
+        }
+        path.remove(path.size() - 1);
+    }
+
+    private static Map<String, List<String>> parseTestRepo(String data) {
+        Map<String, List<String>> graph = new HashMap<>();
+        for (String line : data.split("\\r?\\n")) {
+            line = line.trim();
+            if (line.isEmpty()) {
+                continue;
+            }
+            String[] parts = line.split(":");
+            if (parts.length < 2) {
+                continue;
+            }
+            String pkg = parts[0].trim();
+            List<String> deps = new ArrayList<>();
+            for (String d : parts[1].trim().split("\\s+")) {
+                if (!d.isEmpty()) {
+                    deps.add(d);
+                }
+            }
+            graph.put(pkg, deps);
+        }
+        return graph;
+    }
+
+    private static Map<String, List<String>> parseApkIndex(String data) {
+        Map<String, List<String>> graph = new HashMap<>();
+        String[] blocks = data.split("\\r?\\n\\r?\\n");
+        for (String block : blocks) {
+            String pkgName = null;
+            String deps = null;
+            for (String line : block.split("\\r?\\n")) {
+                if (line.startsWith("P:")) {
+                    pkgName = line.substring(PREFIX_LENGTH).trim();
+                }
+                if (line.startsWith("D:")) {
+                    deps = line.substring(PREFIX_LENGTH).trim();
+                }
+            }
+            if (pkgName != null) {
+                List<String> depList = new ArrayList<>();
+                if (deps != null) {
+                    for (String d : deps.split(",")) {
+                        depList.add(d.trim());
+                    }
+                }
+                graph.put(pkgName, depList);
+            }
+        }
+        return graph;
+    }
+
+    private static String readFile(String filePath) {
+        try {
+            return Files.readString(Path.of(filePath), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new IllegalArgumentException("Ошибка чтения файла: " + e.getMessage());
+        }
     }
 
     private static String readRepository(String repoPath, String mode) {
         if (MODE_LOCAL.equals(mode)) {
-            try {
-                return Files.readString(Path.of(repoPath), StandardCharsets.UTF_8);
-            } catch (IOException e) {
-                throw new IllegalArgumentException("Ошибка чтения локального файла: " + e.getMessage());
-            }
+            return readFile(repoPath);
         } else {
             return fetchRemoteData(repoPath);
         }
@@ -90,42 +175,8 @@ public class Main {
                 return new String(is.readAllBytes(), StandardCharsets.UTF_8);
             }
         } catch (IOException e) {
-            throw new IllegalArgumentException("Ошибка загрузки данных по URL: " + e.getMessage());
+            throw new IllegalArgumentException("Ошибка загрузки по URL: " + e.getMessage());
         }
-    }
-
-    private static String extractDependencies(String data, String pkg, String version) {
-        String[] blocks = data.split(BLOCK_DELIMITER);
-        for (String block : blocks) {
-            if (isTargetPackage(block, pkg, version)) {
-                return findDependencyLine(block);
-            }
-        }
-        throw new IllegalArgumentException("Пакет " + pkg + " версии " + version + " не найден");
-    }
-
-    private static boolean isTargetPackage(String block, String pkg, String version) {
-        boolean pkgMatch = false;
-        boolean verMatch = false;
-        for (String line : block.split(LINE_DELIMITER)) {
-            String trimmed = line.trim();
-            if (trimmed.equals(PACKAGE_PREFIX + pkg)) {
-                pkgMatch = true;
-            }
-            if (trimmed.equals(VERSION_PREFIX + version)) {
-                verMatch = true;
-            }
-        }
-        return pkgMatch && verMatch;
-    }
-
-    private static String findDependencyLine(String block) {
-        for (String line : block.split(LINE_DELIMITER)) {
-            if (line.startsWith(DEPENDENCY_PREFIX)) {
-                return line.substring(PREFIX_LENGTH).trim();
-            }
-        }
-        return "Нет зависимостей";
     }
 
     private static AppConfig parseArgs(String[] args) {
@@ -184,10 +235,10 @@ public class Main {
         if (value == null || value.isBlank()) {
             throw new IllegalArgumentException("Не задан путь к репозиторию (" + REPO_ARG + ")");
         }
-        if (MODE_LOCAL.equals(mode)) {
+        if (MODE_LOCAL.equals(mode) || MODE_TEST.equals(mode)) {
             Path path = Path.of(value);
             if (!Files.exists(path)) {
-                throw new IllegalArgumentException("Локальный репозиторий не найден: " + value);
+                throw new IllegalArgumentException("Файл не найден: " + value);
             }
         } else if (!value.startsWith("http://") && !value.startsWith("https://")) {
             throw new IllegalArgumentException(
@@ -244,7 +295,7 @@ public class Main {
         System.out.println("Опции:");
         System.out.println("  " + PACKAGE_ARG + " <имя>       имя анализируемого пакета (обязательно)");
         System.out.println("  " + REPO_ARG + " <путь|URL>     путь к файлу репозитория или URL (обязательно)");
-        System.out.println("  " + MODE_ARG + " <local|remote> режим работы (по умолчанию: local)");
+        System.out.println("  " + MODE_ARG + " <режим>       local, remote или test (по умолчанию: local)");
         System.out.println("  " + VERSION_ARG + " <версия>    версия пакета (по умолчанию: latest)");
         System.out.println("  " + OUTPUT_ARG + " <файл>       имя файла графа .png/.svg/.dot " +
                 "(по умолчанию: graph.png)");

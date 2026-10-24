@@ -22,7 +22,7 @@ for /d %%i in ("C:\Program Files\Eclipse Adoptium\jdk*") do (
 )
 if defined JAVA_HOME goto :jdk_found
 
-echo JDK не найден. Установите JDK 17+ и повторите попытку.
+echo JDK не найден. Установите JDK 17+.
 pause
 exit /b 1
 
@@ -40,16 +40,20 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo Пример 1: Успешный поиск зависимостей для curl 7.81.0
-java -cp out ru.miem.depgraph.Main --package curl --repo "%CD%\repo.txt" --mode local --version 7.81.0
+echo Тест 1: Реальный репозиторий (curl), глубина 2
+java -cp out ru.miem.depgraph.Main --package curl --repo "%CD%\repo.txt" --mode local --depth 2
 echo.
 
-echo Пример 2: Поиск зависимостей для bash 5.1.0
-java -cp out ru.miem.depgraph.Main --package bash --repo "%CD%\repo.txt" --mode local --version 5.1.0
+echo Тест 2: Тестовый граф (A), глубина 3 (ограничение глубины)
+java -cp out ru.miem.depgraph.Main --package A --repo "%CD%\test_graph.txt" --mode test --depth 3
 echo.
 
-echo Пример 3: Ошибка (пакет не найден)
-java -cp out ru.miem.depgraph.Main --package unknown-pkg --repo "%CD%\repo.txt" --mode local
+echo Тест 3: Тестовый граф (A), глубина 5 (обнаружение цикла)
+java -cp out ru.miem.depgraph.Main --package A --repo "%CD%\test_graph.txt" --mode test --depth 5
+echo.
+
+echo Тест 4: Тестовый граф (X), глубина 10 (изолированный цикл X-Y)
+java -cp out ru.miem.depgraph.Main --package X --repo "%CD%\test_graph.txt" --mode test --depth 10
 echo.
 
 pause
